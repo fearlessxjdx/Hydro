@@ -111,6 +111,95 @@ Hydro 用户群：1085853538
 <details>
 <summary><h2>更新日志（点击展开）</h2></summary>
 
+## Hydro 4.18.0 / UI 4.56.0
+
+- core&ui: ScoreboardView API
+- onsite-toolkit: Resolver
+- core: 优化 icpc 格式导入
+- core: 添加 limit.pretest 选项
+- core: 添加 task/daily 性能日志
+- framework: 默认移除 UiContext 和 UserContext
+
+## Hydro 4.17.4 / UI 4.55.3
+
+- core: 修复 markdown 模式下使用 HTML 导入时解析异常
+- core: 允许复制引用的题目
+- core&judge: 添加 trusted 选项
+- core: 修复导入用户 metadata 解析
+- core: 修改 pid 校验格式
+- ui: 禁用自动播放
+- core: 题目列表性能优化
+
+## Hydro 4.17.3 / UI 4.55.2
+
+- core: 限制显示名长度
+- core: 支持调整代码长度限制
+- core: 在作业中关闭在线 IDE 代码缓存
+- core: API: 检查 PERM_VIEW
+- judge: 添加 HYDRO_TIME_USAGE 和 HYDRO_MEMORY_USAGE 环境变量
+- core&ui: 支持 i18n 热重载
+- fps-import: 优化图片导入
+- ui: 支持圆角设置
+- core: 支持 StorageModel.copy 和 StorageModel.exists
+- core: 弃用 ProblemModel.list
+- core: 添加 user/import/parse 和 user/import/create 钩子
+
+## Hydro 4.16.0 / UI 4.54.3
+
+- core: 停用 handler, lib, script 组件类型
+- core: 升级到 ts5.6, cordis3.18
+- recaptcha: 移除
+- core: 大幅提升每日任务性能
+- core: (部分)支持 icpc package format
+- core: limitRate: 支持自定义 id
+- core: 弃用 array 格式题面
+- core: backup: 添加 `--withAddons` 选项 (测试)
+- core: session 性能优化
+- install: mongodb 默认监听 127.0.0.1
+- core&ui: 其他错误修复
+
+## UI 4.54.2
+
+- ui: 修复 markdown 预览
+- ui: 优化禁用内置登录时的登录框显示
+
+## UI 4.54.1
+
+- ui: 修复 view-transitions
+- onlyoffice: 支持处理 PDF 文件
+- ui: markdown 支持显示代码行号
+- ui: 支持扩展 richmedia 功能
+- ui: 支持嵌入优酷视频
+- ui: 移除部分页面组件多余的横向滚动条
+
+### Hydro 4.15.0 / UI 4.54.0
+
+- core: 修复题解投票数量计算
+- ui: 优化暗色模式 404 页图片
+- ui: 点击展开编译信息
+- ui: 修复比赛计分板关注用户
+- core: ProblemModel.import: 支持 delSource 选项
+- ui: 修复生成测试数据实时推送
+- prom-client: 上报状态至控制台
+- core: oauth: 支持固定用户名
+- utils: 支持查找 nix 安装的 pm2
+- ui: 优化比赛页题目导航
+- ui: 弃用 monacoTheme 选项
+- ui: markdown 编辑器支持暗色模式
+- framework: 优化堆栈追踪
+- core: oplog: 记录访问路径
+- migrate: 加长超时时间
+- vjudge: 修复 yacs 导致系统崩溃的问题
+- sonic: 支持按题目 ID 搜索题目
+- core: 修复导入用户时若含小组会覆盖原有小组设置的问题
+
+### Hydro 4.14.1 / UI 4.53.2
+- core: 修复分数泄露
+- core: 优化错误堆栈
+- core: UserModel.getListForRender: 支持额外字段
+- core: ProblemModel.import: 合并参数为导入选项
+- ui: 启用 view-transistions
+
 ### Hydro 4.14.0 / UI 4.53.1
 - core: 修复能够越权查看隐藏题目的问题 [security]
 - ui: 优化提交记录详情富文本展示

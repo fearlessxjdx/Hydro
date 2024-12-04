@@ -12,10 +12,11 @@ import { Logger, size, streamToBuffer } from '@hydrooj/utils/lib/utils';
 import { Context } from '../context';
 import { FileUploadError, ProblemNotFoundError, ValidationError } from '../error';
 import type {
-    Document, ProblemDict, ProblemStatusDoc, User,
+    Document, ProblemConfigFile, ProblemDict, ProblemStatusDoc, User,
 } from '../interface';
 import { parseConfig } from '../lib/testdataConfig';
 import * as bus from '../service/bus';
+import db from '../service/db';
 import {
     ArrayKeys, MaybeArray, NumberKeys, Projection,
 } from '../typeutils';
@@ -27,30 +28,30 @@ import RecordModel from './record';
 import SolutionModel from './solution';
 import storage from './storage';
 import * as SystemModel from './system';
-import user from './user';
 
 export interface ProblemDoc extends Document { }
 export type Field = keyof ProblemDoc;
 
 const logger = new Logger('problem');
-function sortable(source: string) {
-    return source.replace(/(\d+)/g, (str) => (str.length >= 6 ? str : ('0'.repeat(6 - str.length) + str)));
+function sortable(source: string, namespaces: Record<string, string>) {
+    const [namespace, pid] = source.includes('-') ? source.split('-') : ['default', source];
+    return ((namespaces ? `${namespaces[namespace]}-` : '') + pid)
+        .replace(/(\d+)/g, (str) => (str.length >= 6 ? str : ('0'.repeat(6 - str.length) + str)));
 }
 
 function findOverrideContent(dir: string, base: string) {
     let files = fs.readdirSync(dir);
     if (files.includes(`${base}.md`)) return fs.readFileSync(path.join(dir, `${base}.md`), 'utf8');
+    if (files.includes(`${base}.pdf`)) return `@[PDF](file://${base}.pdf)`;
     const languages = {};
-    files = files.filter((i) => new RegExp(`^${base}_[a-zA-Z_]+\\.md$`).test(i));
+    files = files.filter((i) => new RegExp(`^${base}(?:_|.)([a-zA-Z_]+)\\.(md|pdf)$`).test(i));
     if (!files.length) return null;
     for (const file of files) {
-        const lang = file.slice(8, -3);
-        let content: string | any[] = fs.readFileSync(path.join(dir, file), 'utf8');
-        try {
-            content = JSON.parse(content);
-            if (!(content instanceof Array)) content = JSON.stringify(content);
-        } catch (e) { }
-        languages[lang] = content;
+        const match = file.match(`^${base}(?:_|.)([a-zA-Z_]+)\\.(md|pdf)$`);
+        const lang = match[1];
+        const ext = match[2];
+        if (ext === 'pdf') languages[lang] = `@[PDF](file://${file})`;
+        else languages[lang] = fs.readFileSync(path.join(dir, file), 'utf8');
     }
     return JSON.stringify(languages);
 }
@@ -61,6 +62,12 @@ interface ProblemImportOptions {
     override?: boolean;
     operator?: number;
     delSource?: boolean;
+}
+
+interface ProblemCreateOptions {
+    difficulty?: number;
+    hidden?: boolean;
+    reference?: { domainId: string, pid: number };
 }
 
 export class ProblemModel {
@@ -131,7 +138,7 @@ export class ProblemModel {
 
     static async add(
         domainId: string, pid: string = '', title: string, content: string, owner: number,
-        tag: string[] = [], meta: { difficulty?: number, hidden?: boolean } = {},
+        tag: string[] = [], meta: ProblemCreateOptions = {},
     ) {
         const [doc] = await ProblemModel.getMulti(domainId, {})
             .sort({ docId: -1 }).limit(1).project({ docId: 1 })
@@ -146,13 +153,15 @@ export class ProblemModel {
     static async addWithId(
         domainId: string, docId: number, pid: string = '', title: string,
         content: string, owner: number, tag: string[] = [],
-        meta: { difficulty?: number, hidden?: boolean } = {},
+        meta: ProblemCreateOptions = {},
     ) {
+        const ddoc = await DomainModel.get(domainId);
         const args: Partial<ProblemDoc> = {
-            title, tag, hidden: meta.hidden || false, nSubmit: 0, nAccept: 0, sort: sortable(pid || `P${docId}`),
+            title, tag, hidden: meta.hidden || false, nSubmit: 0, nAccept: 0, sort: sortable(pid || `P${docId}`, ddoc?.namespaces),
         };
         if (pid) args.pid = pid;
         if (meta.difficulty) args.difficulty = meta.difficulty;
+        if (meta.reference) args.reference = meta.reference;
         await bus.parallel('problem/before-add', domainId, content, owner, docId, args);
         const result = await document.add(domainId, content, owner, document.TYPE_PROBLEM, docId, null, null, args);
         args.content = content;
@@ -169,9 +178,10 @@ export class ProblemModel {
         rawConfig = false,
     ): Promise<ProblemDoc | null> {
         if (Number.isSafeInteger(+pid)) pid = +pid;
+        const ddoc = await DomainModel.get(domainId);
         const res = typeof pid === 'number'
             ? await document.get(domainId, document.TYPE_PROBLEM, pid, projection)
-            : (await document.getMulti(domainId, document.TYPE_PROBLEM, { sort: sortable(pid), pid })
+            : (await document.getMulti(domainId, document.TYPE_PROBLEM, { sort: sortable(pid, ddoc?.namespaces), pid })
                 .project(buildProjection(projection)).limit(1).toArray())[0];
         if (!res) return null;
         try {
@@ -186,33 +196,16 @@ export class ProblemModel {
         return document.getMulti(domainId, document.TYPE_PROBLEM, query, projection).sort({ sort: 1 });
     }
 
+    /** @deprecated */
     static async list(
         domainId: string, query: Filter<ProblemDoc>,
         page: number, pageSize: number,
-        projection = ProblemModel.PROJECTION_LIST, uid?: number,
+        projection = ProblemModel.PROJECTION_LIST,
     ): Promise<[ProblemDoc[], number, number]> {
-        const union = await DomainModel.get(domainId);
-        const domainIds = [domainId, ...(union.union || [])];
-        let count = 0;
-        const pdocs = [];
-        for (const id of domainIds) {
-            // TODO enhance performance
-            if (typeof uid === 'number') {
-                // eslint-disable-next-line no-await-in-loop
-                const udoc = await user.getById(id, uid);
-                if (!udoc.hasPerm(PERM.PERM_VIEW_PROBLEM)) continue;
-            }
-            // eslint-disable-next-line no-await-in-loop
-            const ccount = await document.count(id, document.TYPE_PROBLEM, query);
-            if (pdocs.length < pageSize && (page - 1) * pageSize - count <= ccount) {
-                // eslint-disable-next-line no-await-in-loop
-                pdocs.push(...await document.getMulti(id, document.TYPE_PROBLEM, query, projection)
-                    .sort({ sort: 1, docId: 1 })
-                    .skip(Math.max((page - 1) * pageSize - count, 0)).limit(pageSize - pdocs.length).toArray());
-            }
-            count += ccount;
-        }
-        return [pdocs, Math.ceil(count / pageSize), count];
+        return await db.paginate(
+            document.getMulti(domainId, document.TYPE_PROBLEM, query, projection).sort({ sort: 1, docId: 1 }),
+            page, pageSize,
+        );
     }
 
     static getStatus(domainId: string, docId: number, uid: number) {
@@ -225,11 +218,12 @@ export class ProblemModel {
 
     static async edit(domainId: string, _id: number, $set: Partial<ProblemDoc>): Promise<ProblemDoc> {
         const delpid = $set.pid === '';
+        const ddoc = await DomainModel.get(domainId);
         if (delpid) {
             delete $set.pid;
-            $set.sort = sortable(`P${_id}`);
+            $set.sort = sortable(`P${_id}`, ddoc.namespaces);
         } else if ($set.pid) {
-            $set.sort = sortable($set.pid);
+            $set.sort = sortable($set.pid, ddoc.namespaces);
         }
         await bus.parallel('problem/before-edit', $set);
         const result = await document.set(domainId, document.TYPE_PROBLEM, _id, $set, delpid ? { pid: '' } : undefined);
@@ -240,15 +234,13 @@ export class ProblemModel {
     static async copy(domainId: string, _id: number, target: string, pid?: string) {
         const original = await ProblemModel.get(domainId, _id);
         if (!original) throw new ProblemNotFoundError(domainId, _id);
-        // TODO: refuse to copy referenced problem
+        if (original.reference) throw new ValidationError('reference');
         if (pid && (/^[0-9]+$/.test(pid) || await ProblemModel.get(target, pid))) pid = '';
         if (!pid && original.pid && !await ProblemModel.get(target, original.pid)) pid = original.pid;
-        const docId = await ProblemModel.add(
+        return await ProblemModel.add(
             target, pid, original.title, original.content,
-            original.owner, original.tag, { hidden: original.hidden },
+            original.owner, original.tag, { hidden: original.hidden, reference: { domainId, pid: _id } },
         );
-        await ProblemModel.edit(target, docId, { reference: { domainId, pid: _id } });
-        return docId;
     }
 
     static push<T extends ArrayKeys<ProblemDoc>>(domainId: string, _id: number, key: ArrayKeys<ProblemDoc>, value: ProblemDoc[T][0]) {
@@ -504,10 +496,16 @@ export class ProblemModel {
                     }
                     return true;
                 };
-                const getFiles = async (type: string) => {
-                    if (!files.find((f) => f.name === type && f.isDirectory())) return [];
-                    const rs = await fs.readdir(path.join(tmpdir, i, type), { withFileTypes: true });
-                    return rs.map((r) => [r, path.join(tmpdir, i, type, r.name)] as [fs.Dirent, string]);
+                const getFiles = async (...type: string[]): Promise<[fs.Dirent, string][]> => {
+                    if (type.length > 1) {
+                        let result = [];
+                        for (const t of type) result = result.concat(await getFiles(t));
+                        return result;
+                    }
+                    const [t] = type;
+                    if (!files.find((f) => f.name === t && f.isDirectory())) return [];
+                    const rs = await fs.readdir(path.join(tmpdir, i, t), { withFileTypes: true });
+                    return rs.map((r) => [r, path.join(tmpdir, i, t, r.name)] as [fs.Dirent, string]);
                 };
 
                 if (pid) {
@@ -517,39 +515,76 @@ export class ProblemModel {
                     }
                     if (!await isValidPid(pid)) pid = undefined;
                 }
-                const overrideContent = findOverrideContent(path.join(tmpdir, i), 'problem');
+                let overrideContent = findOverrideContent(path.join(tmpdir, i), 'problem');
+                overrideContent ||= findOverrideContent(path.join(tmpdir, i, 'statement'), 'problem');
+                overrideContent ||= findOverrideContent(path.join(tmpdir, i, 'problem_statement'), 'problem');
                 if (pdoc.difficulty && !Number.isSafeInteger(pdoc.difficulty)) delete pdoc.difficulty;
-                if (typeof pdoc.title !== 'string') throw new ValidationError('title', null, 'Invalid title');
-                const allFiles = [...await getFiles('testdata'), ...await getFiles('additional_file')];
+                const title = pdoc.title || (pdoc as any).name;
+                if (typeof title !== 'string') throw new ValidationError('title', null, 'Invalid title');
+                const allFiles = await getFiles(
+                    'testdata', 'additional_file',
+                    // The following is from https://icpc.io/problem-package-format/spec/2023-07-draft.html
+                    'attachments', 'generators', 'include', 'data', 'statement', 'problem_statement',
+                );
                 const totalSize = allFiles.map((f) => fs.statSync(f[1]).size).reduce((a, b) => a + b, 0);
                 if (allFiles.length > SystemModel.get('limit.problem_files')) throw new ValidationError('files', null, 'Too many files');
                 if (totalSize > SystemModel.get('limit.problem_files_size')) throw new ValidationError('files', null, 'Files too large');
                 const tag = (pdoc.tag || []).map((t) => t.toString());
+                let configChanged = false;
+                let config: ProblemConfigFile = {};
+                if (await fs.exists('testdata/config.yaml')) {
+                    try {
+                        config = yaml.load(await fs.readFile('testdata/config.yaml', 'utf-8'));
+                    } catch (e) {
+                        // TODO: report this as a warning
+                    }
+                }
+                if ((pdoc as any).limits) {
+                    config.time = (pdoc as any).limits.time_limit;
+                    config.memory = (pdoc as any).limits.memory;
+                }
                 const docId = overridePid
                     ? (await ProblemModel.edit(domainId, overridePid, {
-                        title: pdoc.title.trim(),
-                        content: overrideContent || pdoc.content || 'No content',
+                        title: title.trim(),
+                        content: overrideContent || pdoc.content?.toString() || 'No content',
                         tag,
                         difficulty: pdoc.difficulty,
                     })).docId
                     : await ProblemModel.add(
-                        domainId, pid, pdoc.title.trim(), overrideContent || pdoc.content || 'No content',
+                        domainId, pid, title.trim(), overrideContent || pdoc.content?.toString() || 'No content',
                         operator || pdoc.owner, tag, { hidden: pdoc.hidden, difficulty: pdoc.difficulty },
                     );
                 // TODO delete unused file when updating pdoc
-                for (const [f, loc] of await getFiles('testdata')) {
+                for (const [f, loc] of await getFiles('testdata', 'attachments', 'generators', 'include')) {
                     if (f.isDirectory()) {
                         const sub = await fs.readdir(loc);
-                        for (const s of sub) await ProblemModel.addTestdata(domainId, docId, s, path.join(tmpdir, i, 'testdata', f.name, s));
+                        for (const s of sub) await ProblemModel.addTestdata(domainId, docId, s, path.join(loc, s));
                     } else if (f.isFile()) await ProblemModel.addTestdata(domainId, docId, f.name, loc);
                 }
-                for (const [f, loc] of await getFiles('additional_file')) {
+                for (const [f, loc] of await getFiles('data')) {
+                    if (!f.isDirectory()) continue;
+                    const sub = await fs.readdir(loc);
+                    for (const file of sub) {
+                        await (f.name === 'sample' ? ProblemModel.addAdditionalFile
+                            : f.name === 'secret' ? ProblemModel.addTestdata
+                                : null)?.(domainId, docId, file, path.join(loc, file));
+                    }
+                }
+                for (const [f, loc] of await getFiles('additional_file', 'attachments', 'statement', 'problem_statement')) {
                     if (!f.isFile()) continue;
                     await ProblemModel.addAdditionalFile(domainId, docId, f.name, loc);
                 }
                 for (const [f, loc] of await getFiles('solution')) {
                     if (!f.isFile()) continue;
                     await SolutionModel.add(domainId, docId, operator, await fs.readFile(loc, 'utf-8'));
+                }
+                for (const [f] of await getFiles('attachments', 'include')) {
+                    if (!f.isFile()) continue;
+                    config.user_extra_files ||= [];
+                    config.user_extra_files = Array.from(new Set(config.user_extra_files.concat(f.name)));
+                    config.judge_extra_files ||= [];
+                    config.judge_extra_files = Array.from(new Set(config.judge_extra_files.concat(f.name)));
+                    configChanged = true;
                 }
                 let count = 0;
                 for (const [f, loc] of await getFiles('std')) {
@@ -558,7 +593,8 @@ export class ProblemModel {
                     if (count > 5) continue;
                     await RecordModel.add(domainId, docId, operator, f.name.split('.')[1], await fs.readFile(loc, 'utf-8'), true);
                 }
-                const message = `${overridePid ? 'Updated' : 'Imported'} problem ${pdoc.pid} (${pdoc.title})`;
+                if (configChanged) await ProblemModel.addTestdata(domainId, docId, 'config.yaml', yaml.dump(config));
+                const message = `${overridePid ? 'Updated' : 'Imported'} problem ${pdoc.pid || docId} (${title})`;
                 (process.env.HYDRO_CLI ? logger.info : progress)?.(message);
             } catch (e) {
                 (process.env.HYDRO_CLI ? logger.info : progress)?.(`Error importing problem ${i}: ${e.message}`);

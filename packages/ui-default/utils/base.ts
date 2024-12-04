@@ -183,11 +183,12 @@ export const request = {
   },
 };
 
-export function withTransistionCallback(callback: () => (Promise<void> | void)) {
+export async function withTransitionCallback(callback: () => (Promise<void> | void)) {
   // @ts-ignore
   if (!document.startViewTransition) return callback?.();
   // @ts-ignore
-  return document.startViewTransition(() => callback());
+  const transition = document.startViewTransition(callback);
+  return await transition.finished;
 }
 
 export async function setTemporaryViewTransitionNames(entries, vtPromise: Promise<void>) {
@@ -200,6 +201,10 @@ export async function setTemporaryViewTransitionNames(entries, vtPromise: Promis
   }
 }
 
+export function getTheme(): 'dark' | 'light' {
+  return ['light', 'dark'].includes(UserContext.theme) ? UserContext.theme : 'light';
+}
+
 Object.assign(window.Hydro.utils, {
   i18n,
   rawHtml,
@@ -209,6 +214,6 @@ Object.assign(window.Hydro.utils, {
   tpl,
   delay,
   zIndexManager,
-  withTransistionCallback,
+  withTransitionCallback,
   setTemporaryViewTransitionNames,
 });

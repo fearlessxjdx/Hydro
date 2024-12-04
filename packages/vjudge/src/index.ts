@@ -55,7 +55,7 @@ class AccountService {
             }
             if (langConfig.validAs?.[this.account.type]) task.lang = langConfig.validAs[this.account.type];
             const comment = langConfig.comment;
-            if (comment) {
+            if (comment && !this.Provider.noComment) {
                 const msg = `Hydro submission #${task.rid}@${new Date().getTime()}`;
                 if (typeof comment === 'string') task.code = `${comment} ${msg}\n${task.code}`;
                 else if (comment instanceof Array) task.code = `${comment[0]} ${msg} ${comment[1]}\n${task.code}`;
@@ -185,7 +185,7 @@ class VJudgeService extends Service {
     }
 
     addProvider(type: string, provider: BasicProvider, override = false) {
-        if (process.env.VJUDGE_DEBUG && process.env.VJUDGE_DEBUG !== type) return;
+        if (process.env.VJUDGE_DEBUG && !(`,${process.env.VJUDGE_DEBUG},`).includes(`,${type},`)) return;
         if (!override && this.providers[type]) throw new Error(`duplicate provider ${type}`);
         this.providers[type] = provider;
         for (const account of this.accounts.filter((a) => a.type === type)) {
@@ -194,9 +194,7 @@ class VJudgeService extends Service {
         }
         // FIXME: potential race condition
         if (provider.Langs) this.updateLangs(type, provider.Langs);
-        this[Context.current]?.on('dispose', () => {
-            // TODO dispose session
-        });
+        // TODO dispose session
     }
 
     async updateLangs(provider: string, mapping: Record<string, Partial<LangConfig>>) {
@@ -264,7 +262,7 @@ export async function apply(ctx: Context) {
     ctx.inject(['vjudge'], async (c) => {
         await c.vjudge.start();
         for (const [k, v] of Object.entries(providers)) {
-            c.vjudge.addProvider(k, v);
+            if (!SystemModel.get(`vjudge.builtin-${k}-disable`)) c.vjudge.addProvider(k, v);
         }
         c.inject(['check'], ({ check }) => {
             check.addChecker('Vjudge', async (_ctx, log, warn, error) => {
