@@ -2,7 +2,7 @@
 import { PassThrough } from 'stream';
 import { JSDOM } from 'jsdom';
 import {
-    htmlEncode, Logger, parseMemoryMB, parseTimeMS, sleep, STATUS,
+    htmlEncode, Logger, parseMemoryMB, parseTimeMS, randomstring, sleep, STATUS,
 } from 'hydrooj';
 import { BasicFetcher } from '../fetch';
 import { IBasicProvider, RemoteAccount } from '../interface';
@@ -95,7 +95,7 @@ export default class POJProvider extends BasicFetcher implements IBasicProvider 
                 }
                 const file = new PassThrough();
                 this.get(src).pipe(file);
-                const fid = String.random(8);
+                const fid = randomstring(8);
                 images[src] = fid;
                 files[`${fid}.png`] = file;
                 ele.setAttribute('src', `file://${fid}.png`);
@@ -161,8 +161,7 @@ export default class POJProvider extends BasicFetcher implements IBasicProvider 
         };
     }
 
-    async listProblem(page: number, resync = false) {
-        if (resync && page > 1) return [];
+    async listProblem(page: number) {
         const { text } = await this.get(`/problemlist?volume=${page}`);
         const $dom = new JSDOM(text);
         return Array.from($dom.window.document.querySelectorAll('.a>tbody>tr[align="center"]'))
@@ -190,7 +189,6 @@ export default class POJProvider extends BasicFetcher implements IBasicProvider 
     // eslint-disable-next-line consistent-return
     async waitForSubmission(id: string, next, end) {
         let count = 0;
-        // eslint-disable-next-line no-constant-condition
         while (count < 60) {
             count++;
             await sleep(3000);

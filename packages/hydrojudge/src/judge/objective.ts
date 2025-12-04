@@ -1,6 +1,6 @@
 import assert from 'assert';
+import { STATUS } from '@hydrooj/common';
 import { fs, yaml } from '@hydrooj/utils';
-import { STATUS } from '@hydrooj/utils/lib/status';
 import { FormatError } from '../error';
 import { Context } from './interface';
 
@@ -33,7 +33,7 @@ export async function judge({
     if (!Object.keys(config.answers).length) throw new FormatError('Invalid standard answer.');
     for (const key in config.answers) {
         const ansInfo = config.answers[key] as [string | string[], number] | Record<string, number>;
-        // eslint-disable-next-line @typescript-eslint/no-loop-func
+        // eslint-disable-next-line ts/no-loop-func
         const report = (status: STATUS, score: number, message: string) => {
             const [subtaskId, caseId] = key.split('-').map(Number);
             totalScore += score;

@@ -84,8 +84,7 @@ export default class YACSProvider extends BasicFetcher implements IBasicProvider
         };
     }
 
-    async listProblem(page: number, resync = false) {
-        if (resync && page > 1) return [];
+    async listProblem(page: number) {
         const data = await this.getData(`/problem?pi=${page}`);
         return data.problemList
             .filter((problem) => problem.contest.status === '榜单已公布')
@@ -109,7 +108,6 @@ export default class YACSProvider extends BasicFetcher implements IBasicProvider
 
     async waitForSubmission(id: string, next, end) {
         const done = {};
-        // eslint-disable-next-line no-constant-condition
         while (true) {
             await sleep(3000);
             const { submission } = await this.getData(`/submission/${id}`);

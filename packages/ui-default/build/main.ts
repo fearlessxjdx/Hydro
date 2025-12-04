@@ -1,14 +1,11 @@
-/* eslint-disable import/no-import-module-exports */
+import path from 'path';
 import { size } from '@hydrooj/utils/lib/utils';
 import cac from 'cac';
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import { globbySync } from 'globby';
-import path from 'path';
-import svgtofont from 'svgtofont';
 import webpack, { Stats } from 'webpack';
 import WebpackDevServer from 'webpack-dev-server';
-import pkg from '../package.json';
 import webpackConfig from './config/webpack';
 import root from './utils/root';
 
@@ -99,6 +96,7 @@ async function main() {
   const dir = process.cwd();
   process.chdir(root());
   if (argv.options.iconfont) {
+    const { default: svgtofont } = await import('svgtofont');
     await svgtofont({
       src: root('misc/icons'),
       dist: root('misc/.iconfont'),
@@ -106,7 +104,7 @@ async function main() {
       classNamePrefix: 'icon',
       fontName: 'hydro-icons',
       css: true,
-      startUnicode: 0xea01,
+      startUnicode: 0xEA01,
       svg2ttf: {
         timestamp: 1577836800, // 2020-1-1
       },
@@ -118,9 +116,6 @@ async function main() {
     });
   } else {
     await runWebpack(argv.options as any);
-    if (fs.existsSync('public/theme.css')) {
-      fs.copyFileSync('public/theme.css', `public/theme-${pkg.version}.css`);
-    }
     await Promise.all(globbySync('public/**/*.map').map((i) => fs.remove(i)));
   }
   process.chdir(dir);

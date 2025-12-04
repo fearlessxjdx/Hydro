@@ -14,7 +14,7 @@ import problem, { ProblemDoc } from '../model/problem';
 import record from '../model/record';
 import { langs } from '../model/setting';
 import storage from '../model/storage';
-import * as system from '../model/system';
+import system from '../model/system';
 import TaskModel from '../model/task';
 import user from '../model/user';
 import {
@@ -25,8 +25,6 @@ import { ContestDetailBaseHandler } from './contest';
 import { postJudge } from './judge';
 
 class RecordListHandler extends ContestDetailBaseHandler {
-    tdoc?: Tdoc;
-
     @param('page', Types.PositiveInt, true)
     @param('pid', Types.ProblemId, true)
     @param('tid', Types.ObjectId, true)
@@ -72,7 +70,7 @@ class RecordListHandler extends ContestDetailBaseHandler {
         }
         if (pid) {
             if (typeof pid === 'string' && tdoc && /^[A-Z]$/.test(pid)) {
-                pid = tdoc.pids[parseInt(pid, 36) - 10];
+                pid = tdoc.pids[Number.parseInt(pid, 36) - 10];
             }
             const pdoc = await problem.get(domainId, pid);
             if (pdoc) q.pid = pdoc.docId;
@@ -131,7 +129,6 @@ class RecordListHandler extends ContestDetailBaseHandler {
 
 class RecordDetailHandler extends ContestDetailBaseHandler {
     rdoc: RecordDoc;
-    tdoc?: Tdoc;
 
     @param('rid', Types.ObjectId)
     async prepare(domainId: string, rid: ObjectId) {
@@ -156,9 +153,15 @@ class RecordDetailHandler extends ContestDetailBaseHandler {
 
     @param('rid', Types.ObjectId)
     @param('download', Types.Boolean)
+    @param('rev', Types.ObjectId, true)
     // eslint-disable-next-line consistent-return
-    async get(domainId: string, rid: ObjectId, download = false) {
-        const rdoc = this.rdoc;
+    async get(domainId: string, rid: ObjectId, download = false, rev?: ObjectId) {
+        let rdoc = this.rdoc;
+        const allRev = await record.collHistory.find({ rid }).project({ _id: 1, judgeAt: 1 }).sort({ _id: -1 }).toArray();
+        const allRevs: Record<string, Date> = Object.fromEntries(allRev.map((i) => [i._id.toString(), i.judgeAt]));
+        if (rev && allRevs[rev.toString()]) {
+            rdoc = { ...rdoc, ...omit(await record.collHistory.findOne({ _id: rev }), ['_id']), progress: null };
+        }
         let canViewDetail = true;
         if (rdoc.contest?.toString().startsWith('0'.repeat(23))) {
             if (rdoc.uid !== this.user._id) throw new PermissionError(PERM.PERM_READ_RECORD_CODE);
@@ -201,7 +204,7 @@ class RecordDetailHandler extends ContestDetailBaseHandler {
         } else if (download) return await this.download();
         this.response.template = 'record_detail.html';
         this.response.body = {
-            udoc, rdoc: canViewDetail ? rdoc : pick(rdoc, ['_id', 'lang', 'code']), pdoc, tdoc: this.tdoc,
+            udoc, rdoc: canViewDetail ? rdoc : pick(rdoc, ['_id', 'lang', 'code']), pdoc, tdoc: this.tdoc, rev, allRevs,
         };
     }
 
@@ -257,6 +260,7 @@ class RecordMainConnectionHandler extends ConnectionHandler {
     pretest = false;
     tdoc: Tdoc;
     applyProjection = false;
+    noTemplate = false;
     queue: Map<string, () => Promise<any>> = new Map();
     throttleQueueClear: () => void;
 
@@ -267,9 +271,10 @@ class RecordMainConnectionHandler extends ConnectionHandler {
     @param('pretest', Types.Boolean)
     @param('all', Types.Boolean)
     @param('allDomain', Types.Boolean)
+    @param('noTemplate', Types.Boolean, true)
     async prepare(
         domainId: string, tid?: ObjectId, pid?: string | number, uidOrName?: string,
-        status?: number, pretest = false, all = false, allDomain = false,
+        status?: number, pretest = false, all = false, allDomain = false, noTemplate = false,
     ) {
         if (tid) {
             this.tdoc = await contest.get(domainId, tid);
@@ -308,6 +313,7 @@ class RecordMainConnectionHandler extends ConnectionHandler {
             this.checkPriv(PRIV.PRIV_MANAGE_ALL_DOMAIN);
             this.allDomain = true;
         }
+        this.noTemplate = noTemplate;
         this.throttleQueueClear = throttle(this.queueClear, 100, { trailing: true });
     }
 
@@ -325,29 +331,32 @@ class RecordMainConnectionHandler extends ConnectionHandler {
             if (rdoc.domainId !== this.args.domainId) return;
             if (!this.pretest && typeof rdoc.input === 'string') return;
             if (!this.all) {
+                if (!rdoc.contest && this.tid) return;
                 if (rdoc.contest && ![this.tid, '000000000000000000000000'].includes(rdoc.contest.toString())) return;
                 if (this.tid && rdoc.contest?.toString() !== '0'.repeat(24)) {
-                    if (contest.isLocked(this.tdoc)) return;
-                    if (!contest.canShowSelfRecord.call(this, this.tdoc, true)) return;
+                    if (rdoc.uid !== this.user._id && !contest.canShowRecord.call(this, this.tdoc, true)) return;
+                    if (rdoc.uid === this.user._id && !contest.canShowSelfRecord.call(this, this.tdoc, true)) return;
                 }
             }
         }
         if (typeof this.pid === 'number' && rdoc.pid !== this.pid) return;
         if (typeof this.uid === 'number' && rdoc.uid !== this.uid) return;
 
-        // eslint-disable-next-line prefer-const
         let [udoc, pdoc] = await Promise.all([
             user.getById(this.args.domainId, rdoc.uid),
             problem.get(rdoc.domainId, rdoc.pid),
         ]);
-        const tdoc = this.tid ? this.tdoc || await contest.get(rdoc.domainId, new ObjectId(this.tid)) : null;
+        const tdoc = this.tid ? this.tdoc : null;
         if (pdoc && !rdoc.contest) {
             if (!problem.canViewBy(pdoc, this.user)) pdoc = null;
             if (!this.user.hasPerm(PERM.PERM_VIEW_PROBLEM)) pdoc = null;
         }
         if (this.applyProjection && typeof rdoc.input !== 'string') rdoc = contest.applyProjection(tdoc, rdoc, this.user);
-        if (this.pretest) this.queueSend(rdoc._id.toHexString(), async () => ({ rdoc: omit(rdoc, ['code', 'input']) }));
-        else {
+        if (this.pretest) {
+            this.queueSend(rdoc._id.toHexString(), async () => ({ rdoc: omit(rdoc, ['code', 'input']) }));
+        } else if (this.noTemplate) {
+            this.queueSend(rdoc._id.toHexString(), async () => ({ rdoc }));
+        } else {
             this.queueSend(rdoc._id.toHexString(), async () => ({
                 html: await this.renderHTML('record_main_tr.html', {
                     rdoc, udoc, pdoc, tdoc, allDomain: this.allDomain,
@@ -374,9 +383,12 @@ class RecordDetailConnectionHandler extends ConnectionHandler {
     disconnectTimeout: NodeJS.Timeout;
     throttleSend: any;
     applyProjection = false;
+    noTemplate = false;
+    canViewCode = false;
 
     @param('rid', Types.ObjectId)
-    async prepare(domainId: string, rid: ObjectId) {
+    @param('noTemplate', Types.Boolean, true)
+    async prepare(domainId: string, rid: ObjectId, noTemplate = false) {
         const rdoc = await record.get(domainId, rid);
         if (!rdoc) return;
         if (rdoc.contest && ![record.RECORD_GENERATE, record.RECORD_PRETEST].some((i) => i.toHexString() === rdoc.contest.toHexString())) {
@@ -394,31 +406,32 @@ class RecordDetailConnectionHandler extends ConnectionHandler {
             problem.getStatus(domainId, rdoc.pid, this.user._id),
         ]);
 
-        let canViewCode = rdoc.uid === this.user._id;
-        canViewCode ||= this.user.hasPriv(PRIV.PRIV_READ_RECORD_CODE);
-        canViewCode ||= this.user.hasPerm(PERM.PERM_READ_RECORD_CODE);
-        canViewCode ||= this.user.hasPerm(PERM.PERM_READ_RECORD_CODE_ACCEPT) && self?.status === STATUS.STATUS_ACCEPTED;
-        if (!canViewCode) {
-            rdoc.code = '';
-            rdoc.compilerTexts = [];
-        }
+        this.canViewCode = rdoc.uid === this.user._id;
+        this.canViewCode ||= this.user.hasPriv(PRIV.PRIV_READ_RECORD_CODE);
+        this.canViewCode ||= this.user.hasPerm(PERM.PERM_READ_RECORD_CODE);
+        this.canViewCode ||= this.user.hasPerm(PERM.PERM_READ_RECORD_CODE_ACCEPT) && self?.status === STATUS.STATUS_ACCEPTED;
 
-        if (!(rdoc.contest && this.user._id === rdoc.uid)) {
+        if (!rdoc.contest || this.user._id !== rdoc.uid) {
             if (!problem.canViewBy(pdoc, this.user)) throw new PermissionError(PERM.PERM_VIEW_PROBLEM_HIDDEN);
         }
 
         this.pdoc = pdoc;
+        this.noTemplate = noTemplate;
         this.throttleSend = throttle(this.sendUpdate, 1000, { trailing: true });
         this.rid = rid.toString();
         this.onRecordChange(rdoc);
     }
 
     async sendUpdate(rdoc: RecordDoc) {
-        this.send({
-            status: rdoc.status,
-            status_html: await this.renderHTML('record_detail_status.html', { rdoc, pdoc: this.pdoc }),
-            summary_html: await this.renderHTML('record_detail_summary.html', { rdoc, pdoc: this.pdoc }),
-        });
+        if (this.noTemplate) {
+            this.send({ rdoc });
+        } else {
+            this.send({
+                status: rdoc.status,
+                status_html: await this.renderHTML('record_detail_status.html', { rdoc, pdoc: this.pdoc }),
+                summary_html: await this.renderHTML('record_detail_summary.html', { rdoc, pdoc: this.pdoc }),
+            });
+        }
     }
 
     @subscribe('record/change')
@@ -429,9 +442,16 @@ class RecordDetailConnectionHandler extends ConnectionHandler {
             clearTimeout(this.disconnectTimeout);
             this.disconnectTimeout = null;
         }
-        if (this.applyProjection && rdoc.input === undefined) rdoc = contest.applyProjection(this.tdoc, rdoc, this.user);
+        if (this.applyProjection) rdoc = contest.applyProjection(this.tdoc, rdoc, this.user);
         // TODO: frontend doesn't support incremental update
         // if ($set) this.send({ $set, $push });
+        if (!this.canViewCode) {
+            rdoc = {
+                ...rdoc,
+                code: '',
+                compilerTexts: [],
+            };
+        }
         if (![STATUS.STATUS_WAITING, STATUS.STATUS_JUDGING, STATUS.STATUS_COMPILING, STATUS.STATUS_FETCHED].includes(rdoc.status)) {
             this.disconnectTimeout = setTimeout(() => this.close(4001, 'Ended'), 30000);
         }

@@ -85,8 +85,12 @@ export async function load(features = ['markdown']) {
   }
   await res.loadThemePromise;
   resolve();
-  return { monaco: res.default, registerAction: res.registerAction, customOptions: res.customOptions };
+  return {
+    monaco: res.default,
+    registerAction: res.registerAction,
+    customOptions: res.customOptions,
+    renderMarkdown: res.renderMarkdown,
+  };
 }
 
 export default load;
-window.Hydro.components.loadMonaco = load;

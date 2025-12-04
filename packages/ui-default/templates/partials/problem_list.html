@@ -6,7 +6,7 @@
 {% if not pdocs.length %}
   {{ nothing.render('Sorry, there are no problems in the problem set.') }}
 {% else %}
-  {{ paginator.render(page, ppcount, position='top', add_qs=('q=' + qs if qs else '')) }}
+  {{ paginator.render(page, ppcount, position='top', add_qs=qs) }}
   <table class="data-table hide-problem-tag">
     <colgroup>
       <col class="col--checkbox display-mode-hide">
@@ -39,7 +39,7 @@
     </thead>
     <tbody>
       {%- for pdoc in pdocs -%}
-      {% set psdoc = psdict[pdoc.domainId + '#' + pdoc.docId] %}
+      {% set psdoc = psdict[pdoc.docId] %}
       <tr data-pid="{{ pdoc.docId }}">
         <td class="col--checkbox display-mode-hide">
           <label class="compact checkbox">
@@ -63,6 +63,6 @@
     {%- endfor -%}
     </tbody>
   </table>
-  {{ paginator.render(page, ppcount, add_qs=('q=' + qs if qs else '')) }}
+  {{ paginator.render(page, ppcount, add_qs=qs) }}
 {% endif %}
 </div>

@@ -1,5 +1,4 @@
 import assert from 'assert';
-import { statSync } from 'fs-extra';
 import { pick } from 'lodash';
 import { Filter, ObjectId } from 'mongodb';
 import { sortFiles } from '@hydrooj/utils/lib/utils';
@@ -11,7 +10,7 @@ import { PERM, PRIV, STATUS } from '../model/builtin';
 import * as oplog from '../model/oplog';
 import problem from '../model/problem';
 import storage from '../model/storage';
-import * as system from '../model/system';
+import system from '../model/system';
 import * as training from '../model/training';
 import user from '../model/user';
 import {
@@ -112,7 +111,7 @@ class TrainingDetailHandler extends Handler {
         const canViewHidden = this.user.hasPerm(PERM.PERM_VIEW_PROBLEM_HIDDEN) || this.user._id;
         const [udoc, udict, pdict, psdict, selfPsdict] = await Promise.all([
             user.getById(domainId, tdoc.owner),
-            user.getListForRender(domainId, enrollUsers, this.user.hasPerm(PERM.PERM_VIEW_DISPLAYNAME) ? ['displayName'] : []),
+            user.getListForRender(domainId, enrollUsers, this.user.hasPerm(PERM.PERM_VIEW_USER_PRIVATE_INFO)),
             problem.getList(domainId, pids, canViewHidden, true),
             problem.getListStatus(domainId, uid, pids),
             shouldCompare ? problem.getListStatus(domainId, this.user._id, pids) : {},
@@ -261,8 +260,7 @@ export class TrainingFilesHandler extends Handler {
         }
         const file = this.request.files?.file;
         if (!file) throw new ValidationError('file');
-        const f = statSync(file.filepath);
-        const size = Math.sum((this.tdoc.files || []).map((i) => i.size)) + f.size;
+        const size = Math.sum((this.tdoc.files || []).map((i) => i.size)) + file.size;
         if (size >= system.get('limit.contest_files_size')) {
             throw new FileLimitExceededError('size');
         }

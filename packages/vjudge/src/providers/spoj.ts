@@ -2,7 +2,7 @@
 import { PassThrough } from 'stream';
 import { JSDOM } from 'jsdom';
 import {
-    Logger, parseMemoryMB, sleep, STATUS,
+    Logger, parseMemoryMB, randomstring, sleep, STATUS,
 } from 'hydrooj';
 import { BasicFetcher } from '../fetch';
 import { IBasicProvider, RemoteAccount } from '../interface';
@@ -53,7 +53,7 @@ export default class SPOJProvider extends BasicFetcher implements IBasicProvider
             if (!src.startsWith('http')) continue;
             const file = new PassThrough();
             this.get(src).pipe(file);
-            const fid = String.random(8);
+            const fid = randomstring(8);
             files[`${fid}.png`] = file;
             ele.setAttribute('src', `file://${fid}.png`);
         }
@@ -81,8 +81,7 @@ langs: ${JSON.stringify(langs)}`),
         };
     }
 
-    async listProblem(page: number, resync = false) {
-        if (resync) return [];
+    async listProblem(page: number) {
         const { document } = await this.html(`/problems/classical/sort=0,start=${page * 50 - 50}`);
         const index = document.querySelector('ul.pagination').querySelector('li.active').children[0].innerHTML.trim();
         if (index !== page.toString()) return [];
@@ -108,7 +107,6 @@ langs: ${JSON.stringify(langs)}`),
 
     async waitForSubmission(id: string, next, end) {
         logger.debug('Waiting for %s', id);
-        // eslint-disable-next-line no-constant-condition
         while (true) {
             await sleep(3000);
             const { text } = await this.get(`/status/ns=${id}`);

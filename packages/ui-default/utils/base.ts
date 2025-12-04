@@ -6,7 +6,7 @@ import DOMServer from 'react-dom/server';
 
 export function substitute(str: string, obj: any) {
   return str.replace(/\{([^{}]+)\}/g, (match, key) => {
-    if (obj[key] !== undefined) return obj[key].toString();
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key].toString();
     return `{${key}}`;
   });
 }
@@ -204,16 +204,3 @@ export async function setTemporaryViewTransitionNames(entries, vtPromise: Promis
 export function getTheme(): 'dark' | 'light' {
   return ['light', 'dark'].includes(UserContext.theme) ? UserContext.theme : 'light';
 }
-
-Object.assign(window.Hydro.utils, {
-  i18n,
-  rawHtml,
-  substitute,
-  secureRandomString,
-  request,
-  tpl,
-  delay,
-  zIndexManager,
-  withTransitionCallback,
-  setTemporaryViewTransitionNames,
-});

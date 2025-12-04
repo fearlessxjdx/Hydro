@@ -1,6 +1,9 @@
 /* eslint-disable max-len */
-/* eslint-disable prefer-destructuring */
+/* eslint-disable regexp/prefer-question-quantifier */
+/* eslint-disable regexp/no-useless-non-capturing-group */
+/* eslint-disable regexp/optimal-quantifier-concatenation */
 
+import _ from 'lodash';
 import type MarkdownIt from 'markdown-it';
 import { v4 as uuid } from 'uuid';
 
@@ -11,6 +14,7 @@ function youtubeParser(url: string) {
   const match = url.match(ytRegex);
   return match && match[7].length === 11 ? match[7] : url;
 }
+// eslint-disable-next-line regexp/no-empty-alternative
 const vimeoRegex = /https?:\/\/(?:www\.|player\.)?vimeo.com\/(?:channels\/(?:\w+\/)?|groups\/([^/]*)\/videos\/|album\/(\d+)\/video\/|)(\d+)(?:$|\/|\?)/;
 function vimeoParser(url: string) {
   const match = url.match(vimeoRegex);
@@ -26,7 +30,7 @@ function preziParser(url: string) {
   const match = url.match(preziRegex);
   return match ? match[1] : url;
 }
-const EMBED_REGEX = /@\[([a-zA-Z].+?)]\((.*?)[)]/im;
+const EMBED_REGEX = /@\[([a-zA-Z].+?)\]\((.*?)\)/;
 function extractVideoParameters(url: string) {
   const parameterMap = new Map();
   const params = url.replace(/&amp;/gi, '&').split(/[#?&]/);
@@ -84,11 +88,11 @@ declare module 'hydrooj' {
   interface ModuleInterfaces {
     richmedia: {
       get: (service: string, src: string, md: MarkdownIt) => string | null;
-    }
+    };
   }
 }
 
-export function Media(md: MarkdownIt) {
+export function Media(md: MarkdownIt, { pdfToolbar = false }: { pdfToolbar?: boolean } = {}) {
   const supported = ['youtube', 'vimeo', 'vine', 'prezi', 'bilibili', 'youku', 'msoffice'];
   md.renderer.rules.video = function tokenizeReturn(tokens, idx) {
     let src = md.utils.escapeHtml(tokens[idx].attrGet('src'));
@@ -98,11 +102,14 @@ export function Media(md: MarkdownIt) {
       if (result) return result;
     }
     if (service === 'pdf') {
-      if (src.startsWith('file://') || src.startsWith('./')) src += src.includes('?') ? '&noDisposition=1' : '?noDisposition=1';
+      if (['file://', './', '../'].some((i) => src.startsWith(i)) || (src[1] === '/' && src[2] !== '/')) src += src.includes('?') ? '&noDisposition=1' : '?noDisposition=1';
+      // A response with has content-disposition header causes the browser to download the file automatically.
+      // As we cannot control response header from external sites, we block embedding external PDFs.
+      else return `<p>Embedding an external PDF is no longer supported.</p> <a href="${_.escape(src)}">Download</a>`;
       return `\
         <object classid="clsid:${uuid().toUpperCase()}">
-          <param name="SRC" value="${src}" >
-          <embed width="100%" style="min-height: 100vh;border: none;" fullscreen="yes" src="${src}">
+          <param name="SRC" value="${src}">
+          <embed type="application/pdf" width="100%" style="min-height:100vh;border:none;" fullscreen="yes" src="${src}#toolbar=${pdfToolbar ? '0' : '1'}&navpanes=0&view=FitH">
             <noembed></noembed>
           </embed>
         </object>`;

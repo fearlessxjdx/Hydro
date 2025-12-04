@@ -1,4 +1,5 @@
-import $ from 'jquery';
+/* eslint-disable react-refresh/only-export-components */
+import { getAlphabeticId } from '@hydrooj/utils/lib/common';
 import yaml from 'js-yaml';
 import React from 'react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
@@ -31,12 +32,12 @@ function Balloon({ tdoc, val }) {
                 <tr key={pid}>
                   <td>
                     {now === pid
-                      ? (<b>{String.fromCharCode(65 + tdoc.pids.indexOf(+pid))}</b>)
-                      : (<span>{String.fromCharCode(65 + tdoc.pids.indexOf(+pid))}</span>)}
+                      ? (<b>{getAlphabeticId(tdoc.pids.indexOf(+pid))}</b>)
+                      : (<span>{getAlphabeticId(tdoc.pids.indexOf(+pid))}</span>)}
                   </td>
                   <td>
                     <HexColorInput
-                      className='textbox'
+                      className="textbox"
                       color={c}
                       onFocus={() => { setNow(pid); setColor(c); }}
                       onChange={(e) => { val[+pid].color = e; setColor(e); }}
@@ -65,11 +66,8 @@ function Balloon({ tdoc, val }) {
 }
 
 async function handleSetColor(tdoc) {
-  let val = tdoc.balloon;
-  if (!val) {
-    val = {};
-    for (const pid of tdoc.pids) val[+pid] = { color: '#ffffff', name: '' };
-  }
+  const val = tdoc.balloon || {};
+  for (const pid of tdoc.pids) val[+pid] ||= { color: '#ffffff', name: '' };
   Notification.info(i18n('Loading...'));
   const action = await new ActionDialog({
     $body: tpl(<>
@@ -87,7 +85,8 @@ async function handleSetColor(tdoc) {
     Notification.error(`${e.message} ${e.params?.[0]}`);
   }
   Notification.info(i18n('Successfully updated.'));
-  pjax.request({ url: '', push: false });
+  if ($('[data-fragment-id="constest_balloon-tbody"]').length) pjax.request({ url: '', push: false });
+  else window.location.reload();
 }
 
 const page = new NamedPage('contest_balloon', () => {

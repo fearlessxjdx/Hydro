@@ -21,11 +21,8 @@ const mapDispatchToProps = (dispatch) => ({
   },
 });
 
+// eslint-disable-next-line react-refresh/only-export-components
 export default connect(mapStateToProps, mapDispatchToProps)(class MessagePadDialogueListContainer extends React.PureComponent {
-  componentDidMount() {
-    $(this.refs.list).scrollLock({ strict: true });
-  }
-
   render() {
     const orderedDialogues = _.orderBy(
       _.values(this.props.dialogues),
@@ -35,7 +32,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(class MessagePadDial
       'desc',
     );
     return (
-      <ol className="messagepad__list" ref="list">
+      <ol className="messagepad__list" ref={(ref) => $(ref).scrollLock({ strict: true })}>
         {_.map(orderedDialogues, (dialogue) => (
           <ListItem
             key={dialogue._id}

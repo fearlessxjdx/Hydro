@@ -23,8 +23,8 @@ const Base64 = {
       if (Number.isNaN(chr2)) enc3 = enc4 = 64;
       else if (Number.isNaN(chr3)) enc4 = 64;
       output = output
-                + this._keyStr.charAt(enc1) + this._keyStr.charAt(enc2)
-                + this._keyStr.charAt(enc3) + this._keyStr.charAt(enc4);
+        + this._keyStr.charAt(enc1) + this._keyStr.charAt(enc2)
+        + this._keyStr.charAt(enc3) + this._keyStr.charAt(enc4);
     }
     return output;
   },
@@ -102,4 +102,3 @@ const Base64 = {
 };
 
 export default Base64;
-window.Hydro.utils.base64 = Base64;
