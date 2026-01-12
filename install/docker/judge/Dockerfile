@@ -23,7 +23,7 @@ RUN apt-get -qq update && \
     ln -s /usr/local/bin/node /usr/bin/node
 
 RUN yarn global add pm2 @hydrooj/hydrojudge && \
-    wget https://github.com/criyle/go-judge/releases/download/v1.9.4/go-judge_1.9.4_linux_amd64v3 -O /usr/bin/sandbox && \
+    wget https://github.com/criyle/go-judge/releases/download/v1.11.3/go-judge_1.11.3_linux_amd64v3 -O /usr/bin/sandbox && \
     chmod +x /usr/bin/sandbox
 
 ENTRYPOINT ["/root/entrypoint.sh"]
