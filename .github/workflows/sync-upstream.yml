@@ -1,0 +1,41 @@
+name: Sync with upstream repository
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # UTC 每天5点执行（可改频率）
+  workflow_dispatch:      # 允许手动点按钮立即运行
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 给token写入权限
+    steps:
+      - name: Checkout your fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: master   # 你的主分支
+
+      - name: Set git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream repository
+        run: git remote add upstream https://github.com/hydro-dev/Hydro.git
+
+      - name: Fetch and rebase upstream master branch
+        run: |
+          git fetch upstream
+          git checkout master
+          git rebase upstream/master
+
+      - name: Push master branch (force)
+        uses: ad-m/github-push-action@master
+        with:
+          branch: master
+          force: true
+          tags: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
