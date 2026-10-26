@@ -25,10 +25,10 @@ jobs:
           fi
 
       - name: Build the backend
-        run: docker build ./install/docker/backend/ -f ./install/docker/backend/Dockerfile --tag registry.cn-hangzhou.aliyuncs.com/hydro/backend:${TAG}
+        run: docker build ./install/docker-xjdx/backend/ -f ./install/docker-xjdx/backend/Dockerfile --tag registry.cn-hangzhou.aliyuncs.com/hydro/backend:${TAG}
 
       - name: Build the judge
-        run: docker build ./install/docker/judge/ -f ./install/docker/judge/Dockerfile --tag registry.cn-hangzhou.aliyuncs.com/hydro/judge:${TAG}
+        run: docker build ./install/docker-xjdx/judge/ -f ./install/docker-xjdx/judge/Dockerfile --tag registry.cn-hangzhou.aliyuncs.com/hydro/judge:${TAG}
 
       - name: Push to the aliyun registry
         run: |
